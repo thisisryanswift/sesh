@@ -37,19 +37,50 @@ dedupe() {
     awk '!seen[$0]++'
 }
 
-# Select with fzf
-SELECTED=$(get_all_items | dedupe | fzf \
-    --height=100% \
-    --layout=default \
-    --border \
-    --prompt="sesh > " \
-    --header="Select project, opencode session (oc:), or type new experiment" \
-    --print-query \
-    --bind="enter:accept-or-print-query")
+# Get the list once
+ALL_ITEMS=$(get_all_items | dedupe)
 
-# fzf --print-query outputs: line 1 = query, line 2 = selection (if any)
-QUERY=$(echo "$SELECTED" | sed -n '1p')
-SELECTION=$(echo "$SELECTED" | sed -n '2p')
+# Handle arguments (lucky mode / pre-fill)
+if [[ -n "$1" ]]; then
+    QUERY_ARG="$*"
+    
+    # Try to filter with fzf
+    MATCHES=$(echo "$ALL_ITEMS" | fzf --filter="$QUERY_ARG")
+    MATCH_COUNT=$(echo "$MATCHES" | wc -l)
+    
+    if [[ -n "$MATCHES" && "$MATCH_COUNT" -eq 1 ]]; then
+        # Lucky match!
+        SELECTION="$MATCHES"
+        QUERY="$QUERY_ARG"
+    else
+        # Multiple matches or no matches - open interactive picker with query
+        SELECTED=$(echo "$ALL_ITEMS" | fzf \
+            --height=100% \
+            --layout=default \
+            --border \
+            --prompt="sesh > " \
+            --header="Select project, opencode session (oc:), or type new experiment" \
+            --query="$QUERY_ARG" \
+            --print-query \
+            --bind="enter:accept-or-print-query")
+            
+        QUERY=$(echo "$SELECTED" | sed -n '1p')
+        SELECTION=$(echo "$SELECTED" | sed -n '2p')
+    fi
+else
+    # No arguments - standard interactive mode
+    SELECTED=$(echo "$ALL_ITEMS" | fzf \
+        --height=100% \
+        --layout=default \
+        --border \
+        --prompt="sesh > " \
+        --header="Select project, opencode session (oc:), or type new experiment" \
+        --print-query \
+        --bind="enter:accept-or-print-query")
+        
+    QUERY=$(echo "$SELECTED" | sed -n '1p')
+    SELECTION=$(echo "$SELECTED" | sed -n '2p')
+fi
 
 # Nothing entered
 if [[ -z "$QUERY" && -z "$SELECTION" ]]; then
@@ -93,7 +124,8 @@ else
         echo "Created: $TARGET_DIR"
         zoxide add "$TARGET_DIR"
     fi
-    OPENCODE_ARGS="-c"
+    # New experiment: start fresh opencode session (don't continue)
+    OPENCODE_ARGS=""
 fi
 
 # Verify directory exists
