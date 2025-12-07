@@ -1,18 +1,34 @@
 #!/usr/bin/env bash
 
 # sesh - unified session manager
-# Combines zoxide (existing projects) + try (experiments) + zellij (sessions)
+# Combines zoxide (existing projects) + try (experiments) + opencode sessions + zellij
+#
+# Based on the original sesh script by Omerxx:
+# https://github.com/omerxx/dotfiles/blob/master/zellij/sesh
+#
+# Extended to integrate with:
+# - try (https://github.com/tobi/try) for experiment directories
+# - opencode sessions for continuing AI conversations
 
 TRY_PATH="${TRY_PATH:-$HOME/src/tries}"
+OPENCODE_STORAGE="$HOME/.local/share/opencode/storage"
 
-# Build list of directories:
-# 1. Zoxide history (frecency-sorted)
-# 2. Try experiments (if not already in zoxide)
-get_directories() {
-    # Get zoxide directories
+# Build list of all sources
+get_all_items() {
+    # 1. OpenCode sessions (prefixed with "oc:" for identification)
+    if command -v opencode &> /dev/null; then
+        opencode session list 2>/dev/null | tail -n +3 | while read -r line; do
+            session_id=$(echo "$line" | awk '{print $1}')
+            # Get everything after the session ID as title
+            title=$(echo "$line" | sed 's/^[^ ]* *//' | sed 's/ *[0-9]*:[0-9]* [AP]M.*//' | sed 's/ *$//')
+            [[ -n "$session_id" && -n "$title" ]] && echo "oc:$session_id  $title"
+        done
+    fi
+    
+    # 2. Zoxide directories
     zoxide query --list 2>/dev/null
     
-    # Add try experiments not already in zoxide
+    # 3. Try experiments
     if [[ -d "$TRY_PATH" ]]; then
         for dir in "$TRY_PATH"/*/; do
             [[ -d "$dir" ]] && echo "${dir%/}"
@@ -20,18 +36,18 @@ get_directories() {
     fi
 }
 
-# Deduplicate while preserving order (zoxide first)
+# Deduplicate while preserving order
 dedupe() {
     awk '!seen[$0]++'
 }
 
-# Select directory with fzf
-SELECTED=$(get_directories | dedupe | fzf \
+# Select with fzf
+SELECTED=$(get_all_items | dedupe | fzf \
     --height=100% \
     --layout=default \
     --border \
     --prompt="sesh > " \
-    --header="Select project or type new experiment name" \
+    --header="Select project, opencode session (oc:), or type new experiment" \
     --print-query \
     --bind="enter:accept-or-print-query")
 
@@ -44,26 +60,45 @@ if [[ -z "$QUERY" && -z "$SELECTION" ]]; then
     exit 0
 fi
 
-# Determine the target directory
-if [[ -n "$SELECTION" ]]; then
+# Check if selection is an opencode session
+if [[ "$SELECTION" == oc:* ]]; then
+    # Extract session ID
+    SESSION_ID=$(echo "$SELECTION" | cut -d: -f2 | awk '{print $1}')
+    
+    # Find the session's directory from the JSON files
+    SESSION_DIR=""
+    for dir in "$OPENCODE_STORAGE"/session/*/; do
+        if [[ -f "${dir}${SESSION_ID}.json" ]]; then
+            SESSION_DIR=$(grep -o '"directory": *"[^"]*"' "${dir}${SESSION_ID}.json" 2>/dev/null | cut -d'"' -f4)
+            break
+        fi
+    done
+    
+    # Fallback to home if not found
+    if [[ -z "$SESSION_DIR" || ! -d "$SESSION_DIR" ]]; then
+        SESSION_DIR="$HOME"
+    fi
+    
+    TARGET_DIR="$SESSION_DIR"
+    OPENCODE_ARGS="-s $SESSION_ID"
+elif [[ -n "$SELECTION" ]]; then
     # User selected an existing directory
     TARGET_DIR="$SELECTION"
+    OPENCODE_ARGS="-c"
 else
     # User typed a new name - create via try
-    # Check if it looks like a date-prefixed name already
     if [[ "$QUERY" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}- ]]; then
         TARGET_DIR="$TRY_PATH/$QUERY"
     else
-        # Add date prefix
         TARGET_DIR="$TRY_PATH/$(date +%Y-%m-%d)-$QUERY"
     fi
     
     if [[ ! -d "$TARGET_DIR" ]]; then
         mkdir -p "$TARGET_DIR"
         echo "Created: $TARGET_DIR"
-        # Add to zoxide so it shows up next time
         zoxide add "$TARGET_DIR"
     fi
+    OPENCODE_ARGS="-c"
 fi
 
 # Verify directory exists
@@ -72,13 +107,16 @@ if [[ ! -d "$TARGET_DIR" ]]; then
     exit 1
 fi
 
+# Export for zellij layout to pick up
+export OPENCODE_ARGS
+
 # Session name from directory basename
 SESSION_NAME=$(basename "$TARGET_DIR")
 
 # Get existing zellij sessions
 SESSION_LIST=$(zellij list-sessions -n 2>/dev/null | awk '{print $1}')
 
-# Attach or create session
+# Attach or create zellij session
 if echo "$SESSION_LIST" | grep -q "^${SESSION_NAME}$"; then
     zellij attach "$SESSION_NAME"
 else
