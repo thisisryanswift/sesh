@@ -2,13 +2,6 @@
 
 # sesh - unified session manager
 # Combines zoxide (existing projects) + try (experiments) + opencode sessions + zellij
-#
-# Based on the original sesh script by Omerxx:
-# https://github.com/omerxx/dotfiles/blob/master/zellij/sesh
-#
-# Extended to integrate with:
-# - try (https://github.com/tobi/try) for experiment directories
-# - opencode sessions for continuing AI conversations
 
 TRY_PATH="${TRY_PATH:-$HOME/src/tries}"
 OPENCODE_STORAGE="$HOME/.local/share/opencode/storage"
@@ -16,12 +9,15 @@ OPENCODE_STORAGE="$HOME/.local/share/opencode/storage"
 # Build list of all sources
 get_all_items() {
     # 1. OpenCode sessions (prefixed with "oc:" for identification)
-    if command -v opencode &> /dev/null; then
-        opencode session list 2>/dev/null | tail -n +3 | while read -r line; do
-            session_id=$(echo "$line" | awk '{print $1}')
-            # Get everything after the session ID as title
-            title=$(echo "$line" | sed 's/^[^ ]* *//' | sed 's/ *[0-9]*:[0-9]* [AP]M.*//' | sed 's/ *$//')
-            [[ -n "$session_id" && -n "$title" ]] && echo "oc:$session_id  $title"
+    # Parse JSON files directly for speed (skips opencode CLI overhead)
+    if [[ -d "$OPENCODE_STORAGE/session/global" ]]; then
+        # Use jq to extract fields, sort by updated time (descending)
+        # Format: oc:SESSION_ID  TITLE
+        find "$OPENCODE_STORAGE/session/global" -name "*.json" -print0 | \
+        xargs -0 jq -r '[.id, .title, .time.updated] | @tsv' 2>/dev/null | \
+        sort -k3 -nr | \
+        while IFS=$'\t' read -r id title updated; do
+            echo "oc:$id  $title"
         done
     fi
     
@@ -67,12 +63,11 @@ if [[ "$SELECTION" == oc:* ]]; then
     
     # Find the session's directory from the JSON files
     SESSION_DIR=""
-    for dir in "$OPENCODE_STORAGE"/session/*/; do
-        if [[ -f "${dir}${SESSION_ID}.json" ]]; then
-            SESSION_DIR=$(grep -o '"directory": *"[^"]*"' "${dir}${SESSION_ID}.json" 2>/dev/null | cut -d'"' -f4)
-            break
-        fi
-    done
+    # Use the session file directly since we have the ID
+    SESSION_FILE="$OPENCODE_STORAGE/session/global/${SESSION_ID}.json"
+    if [[ -f "$SESSION_FILE" ]]; then
+        SESSION_DIR=$(jq -r .directory "$SESSION_FILE" 2>/dev/null)
+    fi
     
     # Fallback to home if not found
     if [[ -z "$SESSION_DIR" || ! -d "$SESSION_DIR" ]]; then
