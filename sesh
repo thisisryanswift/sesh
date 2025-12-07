@@ -2,12 +2,6 @@
 
 # sesh - unified session manager
 # Combines zoxide (existing projects) + try (experiments) + zellij (sessions)
-#
-# Based on the original sesh script by Omerxx:
-# https://github.com/omerxx/dotfiles/blob/master/zellij/sesh
-#
-# Extended to integrate with try (https://github.com/tobi/try) for
-# creating new experiment directories on the fly.
 
 TRY_PATH="${TRY_PATH:-$HOME/src/tries}"
 
@@ -34,7 +28,7 @@ dedupe() {
 # Select directory with fzf
 SELECTED=$(get_directories | dedupe | fzf \
     --height=40% \
-    --layout=reverse \
+    --layout=default \
     --border \
     --prompt="sesh > " \
     --header="Select project or type new experiment name" \
