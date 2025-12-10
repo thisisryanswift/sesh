@@ -144,35 +144,10 @@ export OPENCODE_ARGS
 # Get existing zellij sessions
 SESSION_LIST=$(zellij list-sessions -n 2>/dev/null | awk '{print $1}')
 
-# Check if we're already inside Zellij
-if [[ -n "$ZELLIJ" ]]; then
-    # Inside Zellij - kill current session and attach to target
-    CURRENT_SESSION="$ZELLIJ_SESSION_NAME"
-    
-    if [[ "$CURRENT_SESSION" == "$SESSION_NAME" ]]; then
-        echo "Already in session: $SESSION_NAME"
-        exit 0
-    fi
-    
-    # Detach, kill current session, attach to new one
-    # This works by writing a command for bash to run after zellij exits
-    if echo "$SESSION_LIST" | grep -q "^${SESSION_NAME}$"; then
-        echo "Switching to: $SESSION_NAME"
-        zellij action detach
-        zellij delete-session "$CURRENT_SESSION" --force 2>/dev/null
-        exec zellij attach "$SESSION_NAME"
-    else
-        echo "Creating and switching to: $SESSION_NAME"
-        zellij action detach
-        zellij delete-session "$CURRENT_SESSION" --force 2>/dev/null
-        cd "$TARGET_DIR" && exec zellij attach -c "$SESSION_NAME"
-    fi
+# Attach or create zellij session
+if echo "$SESSION_LIST" | grep -q "^${SESSION_NAME}$"; then
+    zellij attach "$SESSION_NAME"
 else
-    # Outside Zellij - normal attach/create
-    if echo "$SESSION_LIST" | grep -q "^${SESSION_NAME}$"; then
-        zellij attach "$SESSION_NAME"
-    else
-        echo "Creating session: $SESSION_NAME"
-        cd "$TARGET_DIR" && zellij attach -c "$SESSION_NAME"
-    fi
+    echo "Creating session: $SESSION_NAME"
+    cd "$TARGET_DIR" && zellij attach -c "$SESSION_NAME"
 fi
