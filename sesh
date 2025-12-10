@@ -144,10 +144,21 @@ export OPENCODE_ARGS
 # Get existing zellij sessions
 SESSION_LIST=$(zellij list-sessions -n 2>/dev/null | awk '{print $1}')
 
-# Attach or create zellij session
-if echo "$SESSION_LIST" | grep -q "^${SESSION_NAME}$"; then
-    zellij attach "$SESSION_NAME"
+# Check if we're already inside Zellij
+if [[ -n "$ZELLIJ" ]]; then
+    # Inside Zellij - switch session instead of nesting
+    if echo "$SESSION_LIST" | grep -q "^${SESSION_NAME}$"; then
+        exec zellij attach "$SESSION_NAME"
+    else
+        echo "Creating session: $SESSION_NAME"
+        cd "$TARGET_DIR" && exec zellij attach -c "$SESSION_NAME"
+    fi
 else
-    echo "Creating session: $SESSION_NAME"
-    cd "$TARGET_DIR" && zellij attach -c "$SESSION_NAME"
+    # Outside Zellij - normal attach/create
+    if echo "$SESSION_LIST" | grep -q "^${SESSION_NAME}$"; then
+        zellij attach "$SESSION_NAME"
+    else
+        echo "Creating session: $SESSION_NAME"
+        cd "$TARGET_DIR" && zellij attach -c "$SESSION_NAME"
+    fi
 fi
