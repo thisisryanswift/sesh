@@ -107,10 +107,13 @@ if [[ "$SELECTION" == oc:* ]]; then
     
     TARGET_DIR="$SESSION_DIR"
     OPENCODE_ARGS="-s $SESSION_ID"
+    # Append session ID to zellij session name to ensure unique instance
+    SESSION_NAME="$(basename "$TARGET_DIR")-${SESSION_ID}"
 elif [[ -n "$SELECTION" ]]; then
     # User selected an existing directory
     TARGET_DIR="$SELECTION"
     OPENCODE_ARGS="-c"
+    SESSION_NAME=$(basename "$TARGET_DIR")
 else
     # User typed a new name - create via try
     if [[ "$QUERY" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}- ]]; then
@@ -126,6 +129,7 @@ else
     fi
     # New experiment: start fresh opencode session (don't continue)
     OPENCODE_ARGS=""
+    SESSION_NAME=$(basename "$TARGET_DIR")
 fi
 
 # Verify directory exists
@@ -136,9 +140,6 @@ fi
 
 # Export for zellij layout to pick up
 export OPENCODE_ARGS
-
-# Session name from directory basename
-SESSION_NAME=$(basename "$TARGET_DIR")
 
 # Get existing zellij sessions
 SESSION_LIST=$(zellij list-sessions -n 2>/dev/null | awk '{print $1}')
